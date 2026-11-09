@@ -210,7 +210,7 @@ API_DOMAIN=api.dev.mylelang.id
 CADDY_EMAIL=admin@mylelang.id
 
 NEXT_PUBLIC_APP_URL=https://dev.mylelang.id
-NEXT_PUBLIC_API_BASE_URL=https://api.dev.mylelang.id/api/v1
+NEXT_PUBLIC_API_BASE_URL=https://dev.mylelang.id/api/v1
 NEXT_PUBLIC_WS_URL=https://api.dev.mylelang.id
 CORS_ORIGINS=https://dev.mylelang.id
 
