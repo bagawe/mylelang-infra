@@ -7,26 +7,30 @@ same Compose stack.
 
 **Dev domains (current):**
 
-| Hostname | Service |
-|---|---|
-| `https://dev.mylelang.id` | Web (Next.js) |
+
+| Hostname                      | Service         |
+| ----------------------------- | --------------- |
+| `https://dev.mylelang.id`     | Web (Next.js)   |
 | `https://api.dev.mylelang.id` | API + WebSocket |
+
 
 ---
 
 ## Stack
 
-| Service | Role | Notes |
-|---|---|---|
-| `caddy` | Reverse proxy + auto HTTPS | `dev.*` → web, `api.dev.*` → api |
-| `web` | Next.js 16 (standalone) | `NEXT_PUBLIC_*` baked at build time |
-| `api` | NestJS API (`:3000`, prefix `/api/v1`) | `NODE_ENV=development` |
-| `worker` | BullMQ consumer | email outbox, upload scan pipeline |
-| `postgres` | PostgreSQL 16 | volume `pgdata`, daily `pg_dump` |
-| `redis` | Redis 7 (AOF) | volume `redisdata` |
-| `minio` | S3-compatible storage | volume `miniodata` |
-| `clamav` | Virus scan for private uploads | ~2 GB RAM; cold start several minutes |
-| `migrate` / `seed` / `minio-init` | one-shot tools (profile `tools`) | run on demand |
+
+| Service                           | Role                                   | Notes                                 |
+| --------------------------------- | -------------------------------------- | ------------------------------------- |
+| `caddy`                           | Reverse proxy + auto HTTPS             | `dev.*` → web, `api.dev.*` → api      |
+| `web`                             | Next.js 16 (standalone)                | `NEXT_PUBLIC_*` baked at build time   |
+| `api`                             | NestJS API (`:3000`, prefix `/api/v1`) | `NODE_ENV=development`                |
+| `worker`                          | BullMQ consumer                        | email outbox, upload scan pipeline    |
+| `postgres`                        | PostgreSQL 16                          | volume `pgdata`, daily `pg_dump`      |
+| `redis`                           | Redis 7 (AOF)                          | volume `redisdata`                    |
+| `minio`                           | S3-compatible storage                  | volume `miniodata`                    |
+| `clamav`                          | Virus scan for private uploads         | ~2 GB RAM; cold start several minutes |
+| `migrate` / `seed` / `minio-init` | one-shot tools (profile `tools`)       | run on demand                         |
+
 
 Worker uses `CLAMD_HOST=clamav` / `CLAMD_PORT=3310` (Compose DNS). ClamAV is
 not published on the host. Keep ~4 GB swap — ClamAV + `docker compose build`
@@ -34,16 +38,20 @@ can spike memory on an 8 GB box.
 
 ---
 
+
+
 ## On-disk layout (VPS)
 
 ```
 /opt/mylelang/
 ├── mylelang-infra/     # this repo (main)
-├── mylelangbackend/    # backend (develop)
-└── mylelangweb/        # web (develop)
+├── mylelangbackend/    # backend (main)
+└── mylelangweb/        # web (main)
 ```
 
 ---
+
+
 
 ## End-to-end setup (from zero)
 
@@ -74,10 +82,12 @@ Harus menampilkan nameserver Cloudflare.
 
 Setelah Active, **DNS → Records** → tambah (Proxy = **DNS only** / abu-abu):
 
-| Type | Name | Content | Proxy |
-|---|---|---|---|
-| `A` | `dev` | `<IP_VPS>` | DNS only |
-| `A` | `api.dev` | `<IP_VPS>` | DNS only |
+
+| Type | Name      | Content    | Proxy    |
+| ---- | --------- | ---------- | -------- |
+| `A`  | `dev`     | `<IP_VPS>` | DNS only |
+| `A`  | `api.dev` | `<IP_VPS>` | DNS only |
+
 
 Hasil FQDN: `dev.mylelang.id` dan `api.dev.mylelang.id`.
 
@@ -95,6 +105,7 @@ Keduanya harus = IP VPS. **Jangan** aktifkan proxy oranye dulu sampai HTTPS Cadd
 Asumsi: VPS baru **Ubuntu** (22.04/24.04) atau Debian. User punya `sudo`.
 
 Yang diotomasi `scripts/bootstrap-vps.sh`:
+
 - apt update/upgrade + tool dasar (`git`, `curl`, `ufw`, …)
 - Docker CE resmi + Compose plugin
 - `systemctl enable --now docker` + user masuk group `docker`
@@ -102,12 +113,16 @@ Yang diotomasi `scripts/bootstrap-vps.sh`:
 - firewall (OpenSSH + 80 + 443)
 - folder `/opt/mylelang`
 
+
+
 #### C1. Install git saja (satu-satunya langkah manual awal)
 
 ```sh
 sudo apt-get update
 sudo apt-get install -y git
 ```
+
+
 
 #### C2. Clone **mylelang-infra** dulu
 
@@ -119,6 +134,8 @@ git clone <URL_REPO_INFRA> mylelang-infra
 cd mylelang-infra
 git checkout main
 ```
+
+
 
 #### C3. Jalankan bootstrap
 
@@ -148,8 +165,8 @@ cd /opt/mylelang
 git clone <URL_REPO_BACKEND>   mylelangbackend
 git clone <URL_REPO_WEB>       mylelangweb
 
-git -C mylelangbackend checkout develop
-git -C mylelangweb checkout develop
+git -C mylelangbackend checkout main
+git -C mylelangweb checkout main
 ```
 
 Ganti `<URL_REPO_*>` dengan URL GitHub asli.
@@ -161,6 +178,8 @@ ssh-keygen -t ed25519 -C "vps-mylelang-dev" -f ~/.ssh/id_ed25519 -N ""
 cat ~/.ssh/id_ed25519.pub
 # tambahkan public key ini sebagai Deploy key (read-only) di tiap repo GitHub
 ```
+
+
 
 ### E. Buat `env/dev.env`
 
@@ -234,6 +253,8 @@ Seed data pertama kali (regions + synthetic):
 docker compose --env-file env/dev.env run --rm seed
 ```
 
+
+
 ### G. Mint service key untuk web BFF
 
 ```sh
@@ -247,6 +268,8 @@ Salin key `mlk_...` ke `env/dev.env` → `API_KEY=...`, lalu rebuild/restart web
 ```sh
 ./scripts/deploy.sh
 ```
+
+
 
 ### H. Verifikasi
 
@@ -270,26 +293,32 @@ crontab -e
 # 0 2 * * * /opt/mylelang/mylelang-infra/scripts/pg-backup.sh >> /var/log/mylelang-pg-backup.log 2>&1
 ```
 
+
+
 ### J. GitHub Actions auto-deploy (opsional tapi disarankan)
 
 Di repo **mylelangbackend** dan **mylelangweb** → **Settings → Secrets and variables → Actions**, buat:
 
-| Secret | Isi |
-|---|---|
-| `DEV_SSH_HOST` | IP VPS |
-| `DEV_SSH_USER` | user SSH (anggota group `docker`) |
-| `DEV_SSH_KEY` | private key PEM user itu |
-| `DEV_SSH_PORT` | `22` (atau port SSH custom) |
 
-Workflow: push ke branch `develop` → SSH ke VPS → jalankan `scripts/deploy.sh`.
+| Secret         | Isi                               |
+| -------------- | --------------------------------- |
+| `DEV_SSH_HOST` | IP VPS                            |
+| `DEV_SSH_USER` | user SSH (anggota group `docker`) |
+| `DEV_SSH_KEY`  | private key PEM user itu          |
+| `DEV_SSH_PORT` | `22` (atau port SSH custom)       |
+
+
+Workflow: push ke branch `main` → SSH ke VPS → jalankan `scripts/deploy.sh`.
 
 Pastikan public key pasangan `DEV_SSH_KEY` sudah ada di `~/.ssh/authorized_keys` di VPS.
 
 ---
 
+
+
 ## Deploy harian
 
-**Otomatis:** push `develop` di backend atau web.
+**Otomatis:** push `main` di backend atau web.
 
 **Manual:**
 
@@ -307,21 +336,27 @@ Kalau `NEXT_PUBLIC_*` berubah, **wajib rebuild** web (`./scripts/deploy.sh`).
 
 ---
 
+
+
 ## Troubleshooting singkat
 
-| Gejala | Cek |
-|---|---|
+
+| Gejala                                    | Cek                                                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `Unit file docker.service does not exist` | Docker belum terpasang. Jalankan **C1b** (repo resmi), baru `systemctl enable --now docker` |
-| `usermod: group 'docker' does not exist` | Sama: install Docker dulu (C1b), lalu `getent group docker \|\| sudo groupadd docker` |
-| `permission denied` docker.sock | User belum di group docker / belum re-login; `groups` harus memuat `docker` |
-| `docker compose: command not found` | Install `docker-compose-plugin` lewat C1b |
-| Sertifikat Caddy gagal | DNS sudah ke IP VPS? Proxy Cloudflare masih abu-abu? Port 80 terbuka? `logs caddy` |
-| `dig` masih IP lama | Tunggu propagasi / purge cache lokal |
-| Upload stuck `QUARANTINED` | `docker compose ps clamav` — tunggu healthy |
-| Web tidak reach API | `API_KEY`, `CORS_ORIGINS`, `NEXT_PUBLIC_*` sudah benar & web di-rebuild? |
-| OOM saat build | Pastikan swap 4 GB aktif: `free -h` |
+| `usermod: group 'docker' does not exist`  | Sama: install Docker dulu (C1b), lalu `getent group docker || sudo groupadd docker`         |
+| `permission denied` docker.sock           | User belum di group docker / belum re-login; `groups` harus memuat `docker`                 |
+| `docker compose: command not found`       | Install `docker-compose-plugin` lewat C1b                                                   |
+| Sertifikat Caddy gagal                    | DNS sudah ke IP VPS? Proxy Cloudflare masih abu-abu? Port 80 terbuka? `logs caddy`          |
+| `dig` masih IP lama                       | Tunggu propagasi / purge cache lokal                                                        |
+| Upload stuck `QUARANTINED`                | `docker compose ps clamav` — tunggu healthy                                                 |
+| Web tidak reach API                       | `API_KEY`, `CORS_ORIGINS`, `NEXT_PUBLIC_*` sudah benar & web di-rebuild?                    |
+| OOM saat build                            | Pastikan swap 4 GB aktif: `free -h`                                                         |
+
 
 ---
+
+
 
 ## Security follow-ups
 
@@ -330,3 +365,4 @@ Kalau `NEXT_PUBLIC_*` berubah, **wajib rebuild** web (`./scripts/deploy.sh`).
 - Backup 4 encryption key out-of-band.
 - MinIO console tidak di-expose lewat Caddy; akses via SSH tunnel bila perlu.
 - Setelah HTTPS stabil, opsional: aktifkan Cloudflare proxy (oranye) + SSL mode **Full (strict)**.
+

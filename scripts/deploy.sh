@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Deploy the My Lelang dev stack on the VPS (build on host, no registry).
-# Triggered by GitHub Actions (push to develop) over SSH, or run manually.
+# Triggered by GitHub Actions (push to main) over SSH, or run manually.
 set -euo pipefail
 
 ROOT="${MYLELANG_ROOT:-/opt/mylelang}"
 INFRA_DIR="$ROOT/mylelang-infra"
 ENV_FILE="$INFRA_DIR/env/dev.env"
 
-APP_BRANCH="${APP_BRANCH:-develop}"   # backend + web deploy from develop
+APP_BRANCH="${APP_BRANCH:-main}"      # backend + web (create develop later if needed)
 INFRA_BRANCH="${INFRA_BRANCH:-main}"  # infra repo tracks main
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }

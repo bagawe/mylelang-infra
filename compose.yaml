@@ -150,8 +150,10 @@ services:
       retries: 10
     mem_limit: 256m
 
+  # minio/minio was removed from Docker Hub. Use the same S3-compatible Silo
+  # image as mylelangbackend/infra/compose.yaml (local dev).
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -160,15 +162,21 @@ services:
     volumes:
       - miniodata:/data
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1",
+        ]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 12
+      start_period: 15s
     mem_limit: 512m
 
   # One-shot: create the private upload bucket if it does not exist.
+  # Silo image includes the `mc` client (minio/mc is also gone from Docker Hub).
   minio-init:
-    image: minio/mc
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     depends_on:
       minio:
         condition: service_healthy
