@@ -47,7 +47,11 @@ can spike memory on an 8 GB box.
 
 ## End-to-end setup (from zero)
 
-Ikuti berurutan. Bagian A–B bisa dikerjakan sebelum/bersamaan dengan VPS.
+Ikuti berurutan. Bagian A–B (DNS) bisa dikerjakan sebelum/bersamaan dengan VPS.
+
+**Alur VPS yang disarankan:** install `git` sebentar → clone **mylelang-infra** dulu →
+jalankan `scripts/bootstrap-vps.sh` (otomatis Docker/swap/firewall) → clone app →
+`deploy.sh`.
 
 ### A. Domain: Hostinger → Cloudflare
 
@@ -86,52 +90,92 @@ dig +short api.dev.mylelang.id
 
 Keduanya harus = IP VPS. **Jangan** aktifkan proxy oranye dulu sampai HTTPS Caddy berhasil.
 
-### C. VPS: package, Docker, swap, firewall
+### C. VPS kosong → clone infra → bootstrap script
 
-SSH ke VPS sebagai user yang punya sudo:
+Asumsi: VPS baru **Ubuntu** (22.04/24.04) atau Debian. User punya `sudo`.
+
+Yang diotomasi `scripts/bootstrap-vps.sh`:
+- apt update/upgrade + tool dasar (`git`, `curl`, `ufw`, …)
+- Docker CE resmi + Compose plugin
+- `systemctl enable --now docker` + user masuk group `docker`
+- swap 4 GB
+- firewall (OpenSSH + 80 + 443)
+- folder `/opt/mylelang`
+
+#### C1. Install git saja (satu-satunya langkah manual awal)
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-plugin git ufw
-
-# User deploy harus bisa docker tanpa sudo
-sudo usermod -aG docker "$USER"
-# logout/login ulang agar group docker aktif
-
-# Swap ~4 GB
-sudo fallocate -l 4G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-
-# Firewall
-sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw enable
-sudo ufw status
+sudo apt-get install -y git
 ```
 
-### D. Clone tiga repo
+#### C2. Clone **mylelang-infra** dulu
 
 ```sh
 sudo mkdir -p /opt/mylelang
-sudo chown "$USER" /opt/mylelang
+sudo chown "$USER:$USER" /opt/mylelang
 cd /opt/mylelang
+git clone <URL_REPO_INFRA> mylelang-infra
+cd mylelang-infra
+git checkout main
+```
 
-git clone <URL_REPO_INFRA>     mylelang-infra
+#### C3. Jalankan bootstrap
+
+```sh
+chmod +x scripts/*.sh
+sudo ./scripts/bootstrap-vps.sh
+```
+
+Lalu **logout SSH dan login lagi**, verifikasi:
+
+```sh
+docker ps
+docker compose version
+free -h
+sudo ufw status
+```
+
+Script idempotent (aman dijalankan ulang). Isi detail ada di `scripts/bootstrap-vps.sh`.
+
+### D. Clone backend + web
+
+Infra sudah di-clone di langkah C. Sekarang clone app (boleh beda akun GitHub).
+VPS harus punya akses ke kedua repo (HTTPS + PAT, atau SSH deploy key).
+
+```sh
+cd /opt/mylelang
 git clone <URL_REPO_BACKEND>   mylelangbackend
 git clone <URL_REPO_WEB>       mylelangweb
 
-cd mylelang-infra && git checkout main
-cd ../mylelangbackend && git checkout develop
-cd ../mylelangweb && git checkout develop
+git -C mylelangbackend checkout develop
+git -C mylelangweb checkout develop
 ```
 
-Ganti `<URL_REPO_*>` dengan URL GitHub asli (HTTPS atau SSH).
+Ganti `<URL_REPO_*>` dengan URL GitHub asli.
+
+Contoh akses SSH GitHub di VPS (opsional):
+
+```sh
+ssh-keygen -t ed25519 -C "vps-mylelang-dev" -f ~/.ssh/id_ed25519 -N ""
+cat ~/.ssh/id_ed25519.pub
+# tambahkan public key ini sebagai Deploy key (read-only) di tiap repo GitHub
+```
 
 ### E. Buat `env/dev.env`
+
+**Opsi 1 (disarankan):** copy file yang sudah di-generate di laptop
+(`mylelang-infra/env/dev.env`, gitignored):
+
+```sh
+# dari laptop
+scp /path/ke/mylelang-infra/env/dev.env USER@IP_VPS:/opt/mylelang/mylelang-infra/env/dev.env
+
+# di VPS
+chmod 600 /opt/mylelang/mylelang-infra/env/dev.env
+```
+
+**Opsi 2:** buat dari contoh di VPS:
 
 ```sh
 cd /opt/mylelang/mylelang-infra
@@ -139,7 +183,7 @@ cp env/dev.env.example env/dev.env
 chmod 600 env/dev.env
 ```
 
-Isi minimal yang wajib diganti:
+Isi minimal yang wajib diganti (sudah sesuai domain jika pakai opsi 1):
 
 ```env
 APP_DOMAIN=dev.mylelang.id
@@ -152,22 +196,20 @@ NEXT_PUBLIC_WS_URL=https://api.dev.mylelang.id
 CORS_ORIGINS=https://dev.mylelang.id
 
 POSTGRES_PASSWORD=<password-kuat>
-# DATABASE_URL harus pakai password yang sama
 DATABASE_URL=postgresql://mylelang:<password-kuat>@postgres:5432/mylelang?schema=public
 
 OBJECT_STORAGE_SECRET_KEY=<password-kuat-minio>
 
-# Generate 4x terpisah:
-#   openssl rand -hex 32
+# Generate 4x terpisah: openssl rand -hex 32
 ACTIVATION_TOKEN_ENCRYPTION_KEY=<64-hex>
 MFA_ENCRYPTION_KEY=<64-hex>
 IDENTITY_ENCRYPTION_KEY=<64-hex>
 BANK_ACCOUNT_ENCRYPTION_KEY=<64-hex>
 ```
 
-`API_KEY` boleh dibiarkan placeholder dulu; di-mint setelah stack pertama kali naik (langkah G).
+`API_KEY` boleh placeholder dulu; di-mint setelah stack naik (langkah G).
 
-Simpan 4 encryption key di tempat aman di luar VPS. Kalau hilang, data terenkripsi tidak bisa dibaca lagi.
+Backup 4 encryption key di luar VPS. Kalau hilang, data terenkripsi tidak bisa dibaca.
 
 ### F. First deploy
 
@@ -269,6 +311,10 @@ Kalau `NEXT_PUBLIC_*` berubah, **wajib rebuild** web (`./scripts/deploy.sh`).
 
 | Gejala | Cek |
 |---|---|
+| `Unit file docker.service does not exist` | Docker belum terpasang. Jalankan **C1b** (repo resmi), baru `systemctl enable --now docker` |
+| `usermod: group 'docker' does not exist` | Sama: install Docker dulu (C1b), lalu `getent group docker \|\| sudo groupadd docker` |
+| `permission denied` docker.sock | User belum di group docker / belum re-login; `groups` harus memuat `docker` |
+| `docker compose: command not found` | Install `docker-compose-plugin` lewat C1b |
 | Sertifikat Caddy gagal | DNS sudah ke IP VPS? Proxy Cloudflare masih abu-abu? Port 80 terbuka? `logs caddy` |
 | `dig` masih IP lama | Tunggu propagasi / purge cache lokal |
 | Upload stuck `QUARANTINED` | `docker compose ps clamav` — tunggu healthy |
