@@ -1,0 +1,207 @@
+# My Lelang - single-node dev stack.
+#
+# Topology: one VPS (8 GB / 8 vCPU). Images are built ON the VPS (no registry).
+# Expected on-disk layout next to this repo:
+#   /opt/mylelang/mylelang-infra   <- this repo (compose, Caddy, scripts)
+#   /opt/mylelang/mylelangbackend  <- backend repo
+#   /opt/mylelang/mylelangweb      <- web repo
+#
+# Run with:  docker compose --env-file env/dev.env <cmd>
+#
+# ClamAV cold-start can take several minutes while signatures load. Worker
+# depends on clamav starting; wait for healthy before testing uploads.
+
+name: mylelang-dev
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+    mem_limit: 128m
+
+  web:
+    build:
+      context: ../mylelangweb
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+    image: mylelang-web:dev
+    restart: unless-stopped
+    env_file:
+      - env/dev.env
+    expose:
+      - "3003"
+    depends_on:
+      - api
+    mem_limit: 512m
+
+  api:
+    build:
+      context: ../mylelangbackend
+      dockerfile: Dockerfile
+    image: mylelang-backend:dev
+    command: ["node", "dist/apps/api/src/main.js"]
+    restart: unless-stopped
+    env_file:
+      - env/dev.env
+    # Dev behaviour (fake email allowed, activation tokens returned). Switch to
+    # production only together with EMAIL_PROVIDER=resend + Resend keys.
+    environment:
+      NODE_ENV: development
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+
+  worker:
+    image: mylelang-backend:dev
+    command: ["node", "dist/apps/worker/src/main.js"]
+    restart: unless-stopped
+    env_file:
+      - env/dev.env
+    environment:
+      NODE_ENV: development
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+    mem_limit: 512m
+
+  # One-shot: prisma migrate deploy. Runs via `docker compose run --rm migrate`.
+  migrate:
+    image: mylelang-backend:dev
+    command: ["npm", "run", "db:migrate"]
+    env_file:
+      - env/dev.env
+    environment:
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    profiles: ["tools"]
+
+  # One-shot: seed (regions snapshot + synthetic data). Run manually first time:
+  #   docker compose --env-file env/dev.env run --rm seed
+  seed:
+    image: mylelang-backend:dev
+    command: ["npm", "run", "db:seed"]
+    env_file:
+      - env/dev.env
+    environment:
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    profiles: ["tools"]
+
+  postgres:
+    image: postgres:16.10
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 1g
+
+  redis:
+    image: redis:7.4.5-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+
+  # One-shot: create the private upload bucket if it does not exist.
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    env_file:
+      - env/dev.env
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        mc alias set local http://minio:9000 "$${OBJECT_STORAGE_ACCESS_KEY}" "$${OBJECT_STORAGE_SECRET_KEY}" &&
+        mc mb -p "local/$${OBJECT_STORAGE_BUCKET}" || true
+    restart: "no"
+    profiles: ["tools"]
+
+  # Same image/version as local backend infra/compose.yaml.
+  # Not published to the host; worker reaches it as clamav:3310 on the Compose network.
+  clamav:
+    image: clamav/clamav-debian:1.5.4
+    restart: unless-stopped
+    volumes:
+      - clamdata:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 2 127.0.0.1 3310 | grep -q PONG"]
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      start_period: 300s
+    mem_limit: 2g
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pgdata:
+  redisdata:
+  miniodata:
+  clamdata:

@@ -1,0 +1,6 @@
+# Real secrets live only on the VPS. Commit only *.example files.
+env/*.env
+!env/*.env.example
+.DS_Store
+*.log
+backups/

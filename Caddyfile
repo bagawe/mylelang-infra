@@ -1,0 +1,32 @@
+# Caddy reverse proxy with automatic HTTPS.
+#
+# Requires real DNS A/AAAA records pointing APP_DOMAIN and API_DOMAIN at this
+# VPS so Caddy can obtain Let's Encrypt certificates. For a pure IP / no-domain
+# dev box, see the HTTP-only fallback block at the bottom.
+
+{
+	email {$CADDY_EMAIL}
+}
+
+# Web app (Next.js standalone)
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3003
+}
+
+# API (NestJS). reverse_proxy transparently handles WebSocket upgrades.
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:3000
+}
+
+# ---------------------------------------------------------------------------
+# HTTP-only fallback for a no-domain dev box. Uncomment and comment the two
+# blocks above if you do not have DNS yet. Everything is served over plain HTTP.
+#
+# :80 {
+# 	handle_path /api/* {
+# 		reverse_proxy api:3000
+# 	}
+# 	reverse_proxy web:3003
+# }
