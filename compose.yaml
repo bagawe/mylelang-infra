@@ -45,11 +45,16 @@ services:
     restart: unless-stopped
     env_file:
       - env/dev.env
+    # env/dev.env also has PORT=3000 for the API; override so Next listens where
+    # Caddy expects it (web:3003). Compose `environment` wins over env_file.
+    environment:
+      PORT: "3003"
+      HOSTNAME: "0.0.0.0"
     expose:
       - "3003"
     depends_on:
       - api
-    mem_limit: 512m
+    mem_limit: 1g
 
   api:
     build:
