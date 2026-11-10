@@ -22,6 +22,14 @@ update_repo() {
 
 [ -f "$ENV_FILE" ] || { echo "Missing $ENV_FILE. Create it from env/dev.env.example."; exit 1; }
 
+# Postgres/MinIO publish to TAILSCALE_IP only. Empty → Docker binds 0.0.0.0 (public).
+TAILSCALE_IP="$(grep -E '^TAILSCALE_IP=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+if [[ -z "$TAILSCALE_IP" ]]; then
+  echo "TAILSCALE_IP is empty in $ENV_FILE."
+  echo "Set it to \`tailscale ip -4\` (or 127.0.0.1 until Tailscale is installed)."
+  exit 1
+fi
+
 update_repo "$INFRA_DIR" "$INFRA_BRANCH"
 update_repo "$ROOT/mylelangbackend" "$APP_BRANCH"
 update_repo "$ROOT/mylelangweb" "$APP_BRANCH"

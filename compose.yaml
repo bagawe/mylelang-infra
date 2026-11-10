@@ -133,6 +133,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # Host publish ONLY on Tailscale (or 127.0.0.1). Never omit the host IP —
+    # bare "5432:5432" would bind all interfaces (public). See README §Tailscale.
+    ports:
+      - "${TAILSCALE_IP}:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -164,6 +168,10 @@ services:
     environment:
       MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY}
+    # S3 API :9000 + console :9001 — Tailscale (or localhost) only.
+    ports:
+      - "${TAILSCALE_IP}:9000:9000"
+      - "${TAILSCALE_IP}:9001:9001"
     volumes:
       - miniodata:/data
     healthcheck:

@@ -121,7 +121,9 @@ setup_swap() {
 }
 
 setup_firewall() {
-  log "Firewall UFW (OpenSSH + 80 + 443)"
+  # Hybrid model: SSH stays public (GitHub Actions + break-glass).
+  # Postgres/MinIO are NOT opened here — Compose binds them to Tailscale IP only.
+  log "Firewall UFW (OpenSSH + 80 + 443; no DB/MinIO)"
   ufw allow OpenSSH
   ufw allow 80/tcp
   ufw allow 443/tcp
@@ -148,7 +150,8 @@ Langkah berikutnya (sebagai user ${TARGET_USER}):
   2. Verifikasi:  docker ps
   3. Clone backend + web di /opt/mylelang (lihat README §D)
   4. Siapkan env/dev.env (scp dari laptop atau dari example)
-  5. Jalankan:  ./scripts/deploy.sh
+  5. (Disarankan) Install Tailscale + set TAILSCALE_IP — README §Tailscale
+  6. Jalankan:  ./scripts/deploy.sh
 ============================================================
 EOF
 }
